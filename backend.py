@@ -5,10 +5,17 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.message import add_messages
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
 
-llm = ChatOpenAI()
+llm = ChatOpenAI(
+    api_key=os.getenv("PERPLEXITY_API_KEY"),
+    base_url="https://api.perplexity.ai",
+    model="sonar-pro",
+    temperature=0.7,
+    max_tokens=5000
+)
 
 class ChatState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
