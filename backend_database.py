@@ -1,10 +1,6 @@
 from langgraph.graph import StateGraph, START, END
 from typing import TypedDict, Annotated
-<<<<<<< HEAD
-from langchain_core.messages import BaseMessage
-=======
 from langchain_core.messages import BaseMessage, HumanMessage
->>>>>>> 28c1bdeeb2c47963425d729adfcbab6e054954a1
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph.message import add_messages
