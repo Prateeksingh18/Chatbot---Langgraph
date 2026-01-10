@@ -1,6 +1,6 @@
 import streamlit as st
 from backend_tools import chatbot, retrieve_all_thread
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 import uuid
 
 # **************************************** utility functions *************************

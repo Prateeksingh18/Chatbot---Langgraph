@@ -1,107 +1,118 @@
 from langgraph.graph import StateGraph, START, END
 from typing import TypedDict, Annotated
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph.message import add_messages
-from langchain_core.tools import Tool
-from langgraph.prebuilt import ToolNode,tools_condition
+from langgraph.prebuilt import ToolNode, tools_condition
+from langchain_community.tools import DuckDuckGoSearchRun
+from langchain_core.tools import tool
 from dotenv import load_dotenv
-# from utilis import search_tool,get_stock_price,calculator
-import sqlite3
-import os
-import requests
+import sqlite3,requests,os
 
 load_dotenv()
-from langchain_core.tools import tool
 
-@tool
-def fetch_github_repo_details(repo_full_name: str) -> str:
-    """
-    Fetches key details for a specific GitHub repository.
-    
-    Args:
-        repo_full_name: Full repo name like 'owner/repo' (e.g., 'langchain-ai/langchain')
-    
-    Returns:
-        Repo details including name, description, stars, forks, language, and URL.
-    """
-    print(f" TOOL CALLED: fetch_github_repo_details('{repo_full_name}')")
-    try:
-        owner, repo = repo_full_name.split('/')
-        url = f"https://api.github.com/repos/{owner}/{repo}"
-        headers = {'Accept': 'application/vnd.github+json'}
-        # Optional: Add token for private repos or higher rate limits
-        token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
-        if token:
-            headers['Authorization'] = f'token {token}'
-        
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        data = response.json()
-        
-        return f"""**{data.get('name', 'N/A')}**
-        - Description: {data.get('description', 'No description')}
-        - Stars: {data.get('stargazers_count', 0)}
-        - Forks: {data.get('forks_count', 0)}
-        - Language: {data.get('language', 'Unknown')}
-        - URL: {data.get('html_url', 'N/A')}"""
-        
-    except Exception as e:
-        return f"Error fetching repo '{repo_full_name}': {str(e)}"
-
+# -------------------
+# 1. LLM
+# -------------------
 llm = ChatOpenAI(
     api_key=os.getenv("PERPLEXITY_API_KEY"),
     base_url="https://api.perplexity.ai",
     model="sonar-pro",
-    temperature=0.1
+    temperature=0.1,
+    max_tokens=1000
 )
 
+# -------------------
+# 2. Tools
+# -------------------
+# Tools
+search_tool = DuckDuckGoSearchRun(region="us-en")
+
+@tool
+def calculator(first_num: float, second_num: float, operation: str) -> dict:
+    """
+    Perform a basic arithmetic operation on two numbers.
+    Supported operations: add, sub, mul, div
+    """
+    try:
+        if operation == "add":
+            result = first_num + second_num
+        elif operation == "sub":
+            result = first_num - second_num
+        elif operation == "mul":
+            result = first_num * second_num
+        elif operation == "div":
+            if second_num == 0:
+                return {"error": "Division by zero is not allowed"}
+            result = first_num / second_num
+        else:
+            return {"error": f"Unsupported operation '{operation}'"}
+        
+        return {"first_num": first_num, "second_num": second_num, "operation": operation, "result": result}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+
+
+@tool
+def get_stock_price(symbol: str) -> dict:
+    """
+    Fetch latest stock price for a given symbol (e.g. 'AAPL', 'TSLA') 
+    using Alpha Vantage with API key in the URL.
+    """
+    url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey=C9PE94QUEW9VWGFM"
+    r = requests.get(url)
+    return r.json()
+
+
+
+tools = [search_tool, get_stock_price, calculator]
+llm_with_tools = llm.bind_tools(tools)
+
+# -------------------
+# 3. State
+# -------------------
 class ChatState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
-# Tools initialization
-tools = [fetch_github_repo_details]
-llm_with_tools = llm.bind_tools(tools)
-Tool = ToolNode(tools)
-
+# -------------------
+# 4. Nodes
+# -------------------
 def chat_node(state: ChatState):
-    messages = state['messages']
-    
-    system_prompt = SystemMessage(content="""
-    You are a helpful assistant with GitHub tools. 
-    
-    Use tools when users mention:
-    - GitHub repositories, repo details, stars, forks
-    - "list repos", "get details for [repo]"
-    
-    Examples: "Get langchain-ai/langgraph details" → fetch_github_repo_details
-    """)
-    
-    response = llm_with_tools.invoke([system_prompt] + messages)
+    """LLM node that may answer or request a tool call."""
+    messages = state["messages"]
+    response = llm_with_tools.invoke(messages)
     return {"messages": [response]}
 
-conn = sqlite3.connect(database='chatbot.db', check_same_thread=False)
-# Checkpointer
+tool_node = ToolNode(tools)
+
+# -------------------
+# 5. Checkpointer
+# -------------------
+conn = sqlite3.connect(database="chatbot.db", check_same_thread=False)
 checkpointer = SqliteSaver(conn=conn)
 
-
+# -------------------
+# 6. Graph
+# -------------------
 graph = StateGraph(ChatState)
 graph.add_node("chat_node", chat_node)
-graph.add_node("tools", Tool)
+graph.add_node("tools", tool_node)
 
 graph.add_edge(START, "chat_node")
-graph.add_conditional_edges('chat_node', tools_condition)
-graph.add_edge('tools','chat_node')
-graph.add_edge("chat_node", END)
+
+graph.add_conditional_edges("chat_node",tools_condition)
+graph.add_edge('tools', 'chat_node')
 
 chatbot = graph.compile(checkpointer=checkpointer)
 
-
-def retrieve_all_thread():
+# -------------------
+# 7. Helper
+# -------------------
+def retrieve_all_threads():
     all_threads = set()
     for checkpoint in checkpointer.list(None):
-        all_threads.add(checkpoint.config['configurable']['thread_id'])
-
+        all_threads.add(checkpoint.config["configurable"]["thread_id"])
     return list(all_threads)
-

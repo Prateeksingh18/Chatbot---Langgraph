@@ -30,33 +30,15 @@ def chat_node(state: ChatState):
     response = llm.invoke(messages)
     return {"messages": [response]}
 
-<<<<<<< HEAD
-def retrive_threads():
-    threads = set()
-    for itm in checkpointer.list(None):
-        threads.add(itm.config['configurable']['thread_id'])
-    
-    return list(threads)
-
-# Creating sqlite3 database to store conversation history
-cont= sqlite3.connect(database='chatbot.db', check_same_thread=False)
-
-# Checkpointer
-checkpointer = SqliteSaver(conn = cont)
-=======
 conn = sqlite3.connect(database='chatbot.db', check_same_thread=False)
 # Checkpointer
 checkpointer = SqliteSaver(conn=conn)
->>>>>>> 28c1bdeeb2c47963425d729adfcbab6e054954a1
 
 graph = StateGraph(ChatState)
 graph.add_node("chat_node", chat_node)
 graph.add_edge(START, "chat_node")
 graph.add_edge("chat_node", END)
 
-<<<<<<< HEAD
-chatbot = graph.compile(checkpointer=checkpointer)
-=======
 chatbot = graph.compile(checkpointer=checkpointer)
 
 def retrieve_all_threads():
@@ -66,4 +48,3 @@ def retrieve_all_threads():
 
     return list(all_threads)
 
->>>>>>> 28c1bdeeb2c47963425d729adfcbab6e054954a1
