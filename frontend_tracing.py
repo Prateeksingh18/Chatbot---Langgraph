@@ -80,14 +80,18 @@ if user_input:
     with st.chat_message('user'):
         st.text(user_input)
 
-    #CONFIG = {'configurable': {'thread_id': st.session_state['thread_id']}}
+    """
+    Config to send thread id of user as metadata to llm, that will help langsmith
+    to store the response of all threads separately. Make it more easy to observe
+    each invoke to llm
+    """
 
     CONFIG = {
         "configurable": {"thread_id": st.session_state["thread_id"]},
+        "run_name": "Query",
         "metadata": {
             "thread_id": st.session_state["thread_id"]
         },
-        "run_name": "chat_turn",
     }
 
     # first add the message to message_history
